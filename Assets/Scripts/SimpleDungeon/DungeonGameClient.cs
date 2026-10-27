@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Text;
 using System.Collections;
 using UnityEngine.Networking;
@@ -6,7 +7,7 @@ using UnityEngine.UI;
 
 public class DungeonGameClient : MonoBehaviour
 {
-    [SerializeField]private string serverUrl = "http://127.0.0.1:3000";
+    [SerializeField] private string serverUrl = "http://127.0.0.1:3000";
     [SerializeField] private Text playerText;
     [SerializeField] private Text roomText;
     [SerializeField] private Text messageText;
@@ -17,8 +18,7 @@ public class DungeonGameClient : MonoBehaviour
     [SerializeField] private Button nextButton;
     [SerializeField] private Button returnButton;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    private void Start()
     {
         enterButton.onClick.AddListener(() => StartCoroutine(Post("/api/dungeon/enter", "{}")));
         attackButton.onClick.AddListener(() => SendAction("ATTACK"));
@@ -28,26 +28,17 @@ public class DungeonGameClient : MonoBehaviour
         returnButton.onClick.AddListener(() => SendAction("RETURN"));
         StartCoroutine(GetState());
     }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
-
     private void SendAction(string action)
     {
         string json = JsonUtility.ToJson(new DungeonActionRequest { action = action });
         StartCoroutine(Post("/api/dungeon/action", json));
     }
-
     private IEnumerator GetState()
     {
         using UnityWebRequest request = UnityWebRequest.Get(serverUrl + "/api/game/state");
-
         yield return request.SendWebRequest();
+        ReadResponse(request);
     }
-
     private IEnumerator Post(string path, string json)
     {
         using UnityWebRequest request = new UnityWebRequest(serverUrl + path, "POST");
@@ -55,5 +46,75 @@ public class DungeonGameClient : MonoBehaviour
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
         yield return request.SendWebRequest();
+        ReadResponse(request);
+    }
+    private void ReadResponse(UnityWebRequest request)
+    {
+        if (request.result == UnityWebRequest.Result.ConnectionError ||
+            request.result == UnityWebRequest.Result.DataProcessingError)
+        {
+            messageText.text = "서버 연결 실패: " + request.error;
+            return;
+        }
+        DungeonResponse response;
+        try { response = JsonUtility.FromJson<DungeonResponse>(request.downloadHandler.text); }
+        catch (ArgumentException)
+        {
+            messageText.text = "서버 응답을 읽을 수 없습니다.";
+            return;
+        }
+        if (response == null)
+        {
+            messageText.text = "서버 응답을 읽을 수 없습니다.";
+            return;
+        }
+        messageText.text = response.message;
+        if (!response.success || response.data == null) return;
+        Draw(response.data);
+    }
+    private void Draw(DungeonStateData state)
+    {
+        DungeonPlayerData player = state.player;
+        playerText.text = $"{player.name} Lv.{player.level}\nHP {player.hp}/{player.maxHp}\nGold {player.gold}";
+        // JsonUtility may materialize an empty nested object for a JSON null.
+        if (state.run == null || string.IsNullOrEmpty(state.run.id))
+        {
+            roomText.text = "진행 중인 던전 없음";
+            enterButton.interactable = true;
+            SetActionButtons(false, false, false, false, false);
+            return;
+        }
+        DungeonRoomData room = state.run.currentRoom;
+        roomText.text = $"방 {room.index + 1}\n{GetRoomDescription(room)}\n\n방 상태: {room.state}\n탐험 골드: {state.run.runGold}";
+        UpdateButtons(room, state.run.state);
+    }
+    private void UpdateButtons(DungeonRoomData room, string runState)
+    {
+        bool playing = runState == "IN_PROGRESS";
+        bool active = room.state == "ACTIVE";
+        bool cleared = room.state == "CLEARED";
+        enterButton.interactable = !playing;
+        SetActionButtons(playing && active && room.type == "MONSTER",
+            playing && active && room.type == "TREASURE", playing && active && room.type == "HEAL",
+            playing && cleared, playing && active && room.type == "EXIT");
+    }
+    private void SetActionButtons(bool attack, bool chest, bool rest, bool next, bool returnToTown)
+    {
+        attackButton.interactable = attack;
+        chestButton.interactable = chest;
+        restButton.interactable = rest;
+        nextButton.interactable = next;
+        returnButton.interactable = returnToTown;
+    }
+    private string GetRoomDescription(DungeonRoomData room)
+    {
+        switch (room.type)
+        {
+            case "MONSTER": return $"{room.monsterName} 출현!\n몬스터 HP: {room.monsterHp}\n몬스터 공격력: {room.monsterAttack}\n처치 보상: {room.rewardGold} Gold";
+            case "TREASURE": return $"보물 상자를 발견했습니다.\n보상: {room.rewardGold} Gold";
+            case "HEAL": return "회복의 샘을 발견했습니다.\n휴식하면 HP를 30 회복합니다.";
+            case "EXIT": return "던전 출구를 발견했습니다.\n귀환하면 탐험 골드를 획득합니다.";
+            default: return "알 수 없는 방입니다.";
+        }
     }
 }
