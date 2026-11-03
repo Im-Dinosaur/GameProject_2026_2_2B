@@ -59,3 +59,8 @@ GameDataManager의 GetQuest() 코루틴, GetQuest(int) 검색, Start에서 플�
 ## Unity 실행 예시 확인 및 검증 준비
 
 원문에 GameDataManager를 GameObject에 부착하고 Inspector의 Player Quests 및 Console에서 조회 결과를 확인한 화면과 Unity→Node.js→MySQL 흐름도가 추가됐습니다. 기존 DungeonScene을 변경하지 않기 위해 별도 DBConnectionScene을 만드는 Tools/Lesson 10/Open DB Connection Scene 메뉴를 Assets/Editor/Lesson10SceneSetup.cs에 추가했습니다. 프로젝트를 열고 스크립트 import까지 확인했으며, 사용자가 데스크톱에서 작업 중인 상태여서 Scene 생성·Play 검증은 아직 완료하지 않았습니다. 이 메뉴를 통해 기존 Scene 수정 여부를 확인한 뒤 별도 Scene에서 테스트할 예정입니다.
+
+
+## Unity Play 통합 검증 완료
+
+원문에 추가된 마지막 그림은 코드 커밋 예시입니다. 자동 커밋은 수행하지 않았습니다. Unity가 닫힌 상태에서 별도 DBConnectionScene을 생성하고 배치 모드의 실제 Play를 실행했습니다. GameDataManager.Start → UnityWebRequest → Node /quests/4 → MySQL → Newtonsoft.Json 역직렬화 → GetQuest(1)까지 검증했습니다. 결과는 초보자 퀘스트 1개, 상태 시작, 보상 경험치 100이며 LESSON10_PLAY_VERIFY_PASS 로그를 확인했습니다. DB 데이터 변경 없이 종료했고 기존 DungeonScene은 수정하지 않았습니다. 로그는 Lesson7Tools/lesson10-play-verification.log이며 검증 메뉴와 배치 검증 코드는 Assets/Editor/Lesson10SceneSetup.cs, Lesson10PlayVerification.cs입니다. 이 기록으로 이전의 Scene 생성·Play 미완료 상태는 해소되었습니다.
