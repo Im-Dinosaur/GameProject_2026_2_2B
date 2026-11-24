@@ -11,7 +11,8 @@ namespace CoreClash.Lesson02
     {
         private void Start()
         {
-            if (System.Environment.GetCommandLineArgs().Contains("-lesson02Smoke")) StartCoroutine(Run());
+            if (System.Environment.GetCommandLineArgs().Contains("-lesson13LifecycleSmoke")) StartCoroutine(Lesson13LifecycleVerification.Run());
+            else if (System.Environment.GetCommandLineArgs().Contains("-lesson02Smoke")) StartCoroutine(Run());
         }
 
         private IEnumerator Run()

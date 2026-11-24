@@ -5,7 +5,9 @@ namespace CoreClash.Lesson02
 {
     public enum Lesson02Button
     {
-        Attack
+        Attack,
+        Fire,
+        Reload
     }
 
     public struct Lesson02InputData : INetworkInput

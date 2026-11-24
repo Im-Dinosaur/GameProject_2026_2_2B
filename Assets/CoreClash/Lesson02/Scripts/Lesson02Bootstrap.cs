@@ -7,6 +7,7 @@ namespace CoreClash.Lesson02
     public class Lesson02Bootstrap : MonoBehaviour
     {
         [SerializeField] private NetworkObject spawnerPrefab;
+        [SerializeField] private NetworkObject matchPrefab;
         private NetworkRunner readyRunner;
         private float spawnAfter;
         private bool spawned;
@@ -24,6 +25,8 @@ namespace CoreClash.Lesson02
             }
             if (Time.unscaledTime < spawnAfter) return;
             runner.Spawn(spawnerPrefab, Vector3.zero, Quaternion.identity);
+            // Prefab creation and assignment are still pending in the lecture.
+            if (matchPrefab != null) runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
             spawned = true;
         }
     }

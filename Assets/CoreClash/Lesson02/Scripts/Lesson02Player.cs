@@ -1,4 +1,5 @@
 using System.Collections;
+using CoreClash.Lesson01.Course;
 using Fusion;
 using UnityEngine;
 
@@ -7,6 +8,8 @@ namespace CoreClash.Lesson02
     [RequireComponent(typeof(NetworkObject), typeof(NetworkTransform))]
     public class Lesson02Player : NetworkBehaviour
     {
+        public string PlayerDisplayName => GetComponent<TodoPlayer>()?.PlayerName.ToString() ?? "Player";
+
         [SerializeField] private float meleeRange = 2.2f;
         [SerializeField] private int meleeDamage = 25;
         [SerializeField] private float moveSpeed = 5f;
@@ -17,19 +20,39 @@ namespace CoreClash.Lesson02
         [Networked] public int Cores { get; private set; }
         [Networked] private TickTimer MeleeCooldown { get; set; }
         [Networked] private NetworkButtons PreviousButtons { get; set; }
+        [SerializeField] private NetworkObject projectilePrefab;
+        [SerializeField] private int magazineSize = 6;
+        [Networked] public int Ammo { get; private set; }
+        [Networked] private TickTimer FireCoolDown { get; set; }
+        [Networked] private TickTimer ReloadTimer { get; set; }
+        [Networked] public int kills { get; private set; }
+        [Networked] public NetworkBool IsDead { get; private set; }
+        [Networked] public NetworkBool IsInvincible { get; private set; }
+        [Networked] private TickTimer RespawnTimer { get; set; }
+        [Networked] private TickTimer InvincibleTimer { get; set; }
 
         public override void Spawned()
         {
             if (!Object.HasStateAuthority) return;
             Health = 100;
+            Ammo = magazineSize;
             Runner.SetPlayerObject(Object.InputAuthority, Object);
         }
 
         public override void FixedUpdateNetwork()
         {
-            if (!Object.HasStateAuthority || !GetInput(out Lesson02InputData input)) return;
+            if (!Object.HasStateAuthority) return;
+            UpdateTimers();
+            if (!GetInput(out Lesson02InputData input)) return;
+            if (IsDead)
+            {
+                PreviousButtons = input.Buttons;
+                return;
+            }
             ApplyMovement(input.Move);
             if (input.Buttons.WasPressed(PreviousButtons, (int)Lesson02Button.Attack)) TryMelee();
+            if (input.Buttons.WasPressed(PreviousButtons, (int)Lesson02Button.Fire)) TryFire();
+            if (input.Buttons.WasPressed(PreviousButtons, (int)Lesson02Button.Reload)) StartReload();
             PreviousButtons = input.Buttons;
         }
 
@@ -44,7 +67,7 @@ namespace CoreClash.Lesson02
         }
 
         public void RequestAddCore(int amount) => RPC_AddCore(amount);
-        public void RequestDamage(int amount, Vector3 direction) => RPC_Damage(amount, direction);
+        public void RequestDamage(int amount, Vector3 direction, PlayerRef attacker) => RPC_Damage(amount, direction, attacker);
 
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         private void RPC_AddCore(int amount)
@@ -53,10 +76,12 @@ namespace CoreClash.Lesson02
         }
 
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        private void RPC_Damage(int amount, Vector3 direction)
+        private void RPC_Damage(int amount, Vector3 direction, PlayerRef attacker)
         {
+            if (IsDead || IsInvincible) return;
             Health = Mathf.Max(0, Health - amount);
             transform.position += direction.normalized * .45f;
+            if (Health == 0) Die(attacker);
         }
 
         private void TryMelee()
@@ -69,11 +94,73 @@ namespace CoreClash.Lesson02
             {
                 Lesson02Player target = hit.GetComponentInParent<Lesson02Player>();
                 if (target == null || target == this) continue;
-                target.RequestDamage(meleeDamage, transform.forward);
+                target.RequestDamage(meleeDamage, transform.forward, Object.InputAuthority);
                 break;
             }
         }
 
+        private void Die(PlayerRef attacker)
+        {
+            IsDead = true;
+            RespawnTimer = TickTimer.CreateFromSeconds(Runner, 3f);
+            if (Runner.TryGetPlayerObject(attacker, out NetworkObject attackerObject))
+                attackerObject.GetComponent<Lesson02Player>()?.RequestAddKill();
+        }
+
+        private void UpdateTimers()
+        {
+            if (ReloadTimer.Expired(Runner))
+            {
+                Ammo = magazineSize;
+                ReloadTimer = TickTimer.None;
+            }
+            if (IsDead && RespawnTimer.Expired(Runner))
+            {
+                Health = 100;
+                IsDead = false;
+                IsInvincible = true;
+                InvincibleTimer = TickTimer.CreateFromSeconds(Runner, 2f);
+                float x = (Object.InputAuthority.RawEncoded % 5 - 2) * 2f;
+                transform.SetPositionAndRotation(new Vector3(x, 1f, 0f), Quaternion.identity);
+            }
+            if (IsInvincible && InvincibleTimer.Expired(Runner)) IsInvincible = false;
+        }
+        public void RequestAddKill() => RPC_AddKill();
+
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        private void RPC_AddKill()
+        {
+            kills++;
+        }
+
+        private void TryFire()
+        {
+            // The lecture has not supplied the projectile prefab setup yet.
+            if (projectilePrefab == null || IsReloading()) return;
+            if (!FireCoolDown.ExpiredOrNotRunning(Runner)) return;
+            if (Ammo <= 0)
+            {
+                StartReload();
+                return;
+            }
+            Ammo--;
+            FireCoolDown = TickTimer.CreateFromSeconds(Runner, .25f);
+            Vector3 position = transform.position + Vector3.up * .8f + transform.forward * 1.1f;
+            Runner.Spawn(projectilePrefab, position, transform.rotation, Object.InputAuthority,
+                (_, obj) => obj.GetComponent<Lesson02Projectile>().Initialize(Object.InputAuthority, 20));
+            if (Ammo == 0) StartReload();
+        }
+        private bool IsReloading()
+        {
+            return ReloadTimer.IsRunning && !ReloadTimer.Expired(Runner);
+        }
+
+        private void StartReload()
+        {
+            if (IsReloading()) return;
+            if (Ammo >= magazineSize) return;
+            ReloadTimer = TickTimer.CreateFromSeconds(Runner, 2.0f);
+        }
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
         private void RPC_PlayMeleeEffect()
         {
